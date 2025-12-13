@@ -19,16 +19,20 @@ def render_marketing_assistant(df, customer_metrics):
     col1, col2 = st.columns(2)
     
     with col1:
+        segment_options = customer_metrics['SegmentName'].unique().tolist()
         selected_segment = st.selectbox(
             "Target Segment",
-            customer_metrics['SegmentName'].unique(),
+            options=segment_options,
+            index=0,
             help="Choose which customer segment to target"
         )
     
     with col2:
+        campaign_options = ["Product Recommendation", "Exclusive Discount", "VIP Upgrade", "Re-engagement", "New Product Launch"]
         campaign_type = st.selectbox(
             "Campaign Type",
-            ["Product Recommendation", "Exclusive Discount", "VIP Upgrade", "Re-engagement", "New Product Launch"],
+            options=campaign_options,
+            index=0,
             help="Select the type of marketing campaign"
         )
     
