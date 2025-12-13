@@ -30,4 +30,4 @@ data/*.xlsx
 
 # Streamlit
 .streamlit/secrets.toml
-.streamlit/
+
