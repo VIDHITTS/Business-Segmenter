@@ -14,17 +14,6 @@ def get_custom_css():
             color: #384959;
         }
         
-        /* Force white background on all Streamlit containers */
-        .stApp,
-        [data-testid="stAppViewContainer"],
-        [class*="emotion-cache"] {
-            background-color: white !important;
-        }
-        
-        .block-container {
-            background-color: white !important;
-        }
-        
         /* Header Styles */
         h1 {
             color: #384959;
