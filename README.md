@@ -35,22 +35,15 @@ The app will open at `http://localhost:8501`
 
 ### Required Columns
 
-Your CSV file must contain these columns:
+Your CSV file must contain ALL of these columns:
 
 | Column | Type | Description | Example |
 |--------|------|-------------|---------|
 | **Date** | datetime | Transaction date (YYYY-MM-DD) | 2024-01-15 |
 | **UserID** | string | Customer identifier | CUST001 |
 | **ProductID** | string | Product name or ID | Gaming Mouse |
-
-### Optional Columns
-
-These columns will be auto-generated if missing:
-
-| Column | Type | Description |
-|--------|------|-------------|
-| TransactionID | string | Unique transaction identifier |
-| Amount | float | Transaction amount |
+| **Amount** | float | Transaction amount | 299.99 |
+| **TransactionID** | string | Unique transaction identifier | TXN001 |
 
 ### Example CSV
 
@@ -150,8 +143,7 @@ streamlit run app.py --server.port 8502
 ```
 
 ### CSV upload errors?
-Check that your CSV has the required columns: **Date**, **UserID**, **ProductID**  
-Optional columns (auto-generated if missing): **Amount**, **TransactionID**
+Your CSV must contain ALL required columns: **Date**, **UserID**, **ProductID**, **Amount**, **TransactionID**
 
 ## License
 

@@ -56,8 +56,8 @@ def load_data(uploaded_file):
             uploaded_file.seek(0)
             df = pd.read_csv(uploaded_file)
             
-            # Validate required columns
-            required_columns = ['Date', 'UserID', 'ProductID']
+            # Validate required columns - ALL columns are now required
+            required_columns = ['Date', 'UserID', 'ProductID', 'Amount', 'TransactionID']
             missing_columns = [col for col in required_columns if col not in df.columns]
             
             if missing_columns:
@@ -68,18 +68,17 @@ def load_data(uploaded_file):
             if len(df) == 0:
                 return None, False, "CSV file is empty. Please upload a file with transaction data."
             
-            # Auto-detect and create missing optional columns
-            if 'TransactionID' not in df.columns:
-                df['TransactionID'] = df.groupby(['Date', 'UserID']).ngroup() + 1
-            
-            if 'Amount' not in df.columns:
-                df['Amount'] = np.random.randint(20, 500, size=len(df))
-            
             # Convert date column
             try:
                 df['Date'] = pd.to_datetime(df['Date'])
             except Exception as e:
                 return None, False, f"Invalid date format in 'Date' column. Please use YYYY-MM-DD format. Error: {str(e)}"
+            
+            # Validate Amount column contains numeric values
+            try:
+                df['Amount'] = pd.to_numeric(df['Amount'])
+            except Exception as e:
+                return None, False, f"Invalid amount values in 'Amount' column. Please ensure all amounts are numbers. Error: {str(e)}"
             
             return df, False, None
             
@@ -120,21 +119,19 @@ if error_msg:
     st.info("""
     **Required CSV Format:**
     
-    Your CSV file must contain these columns:
+    Your CSV file must contain ALL these columns:
     - **Date** - Transaction date (YYYY-MM-DD format)
     - **UserID** - Customer identifier
     - **ProductID** - Product name or ID
-    
-    Optional columns (will be auto-generated if missing):
+    - **Amount** - Transaction amount (numeric)
     - **TransactionID** - Unique transaction identifier
-    - **Amount** - Transaction amount
     
     **Example:**
     ```
-    Date,UserID,ProductID,Amount
-    2024-01-15,CUST001,PROD123,299.99
-    2024-01-15,CUST001,PROD456,149.99
-    2024-01-16,CUST002,PROD123,299.99
+    Date,UserID,ProductID,Amount,TransactionID
+    2024-01-15,CUST001,PROD123,299.99,TXN001
+    2024-01-15,CUST001,PROD456,149.99,TXN001
+    2024-01-16,CUST002,PROD123,299.99,TXN002
     ```
     """)
     st.stop()
