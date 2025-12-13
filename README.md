@@ -150,7 +150,8 @@ streamlit run app.py --server.port 8502
 ```
 
 ### CSV upload errors?
-Check that your CSV has the required columns: `Date`, `UserID`, `ProductID`
+Check that your CSV has the required columns: **Date**, **UserID**, **ProductID**  
+Optional columns (auto-generated if missing): **Amount**, **TransactionID**
 
 ## License
 
