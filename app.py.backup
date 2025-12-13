@@ -1,0 +1,688 @@
+"""
+Smart Business Segmenter - Main Application
+A comprehensive tool for customer segmentation and market basket analysis
+"""
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import sys
+import os
+
+# Add utils to path
+sys.path.append(os.path.dirname(__file__))
+
+from utils.data_generator import generate_demo_data
+from utils.segmentation import calculate_customer_metrics, segment_customers, get_segment_insights
+from utils.market_basket import prepare_basket_data, find_product_bundles, calculate_bundle_revenue_potential
+from assets.styles import get_custom_css
+
+# --- PAGE CONFIGURATION ---
+st.set_page_config(
+    page_title="Smart Business Segmenter",
+    page_icon="🛍️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Apply custom CSS
+st.markdown(get_custom_css(), unsafe_allow_html=True)
+
+# --- SESSION STATE INITIALIZATION ---
+if 'data_analyzed' not in st.session_state:
+    st.session_state.data_analyzed = False
+if 'uploaded_file_name' not in st.session_state:
+    st.session_state.uploaded_file_name = None
+
+# --- TITLE ---
+st.markdown("""
+<div style='text-align: center; padding: 20px 0;'>
+    <h1 style='font-size: 3em; margin-bottom: 0;'>🛍️ Smart Business Segmenter</h1>
+    <p style='font-size: 1.2em; color: #718096; margin-top: 10px;'>
+        Discover hidden patterns • Segment customers • Generate AI-powered campaigns
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.markdown("### 📤 Data Upload")
+    st.markdown("Upload your CSV file with:")
+    st.markdown("• **Date** - Transaction date")
+    st.markdown("• **UserID** - Customer identifier")
+    st.markdown("• **ProductID** - Product name/ID")
+    
+    uploaded_file = st.file_uploader(
+        "Drop your CSV file here",
+        type=["csv"],
+        help="Upload transaction data for analysis"
+    )
+    
+    # Check if file changed
+    if uploaded_file is not None:
+        if st.session_state.uploaded_file_name != uploaded_file.name:
+            st.session_state.data_analyzed = False
+            st.session_state.uploaded_file_name = uploaded_file.name
+    
+    st.markdown("---")
+    
+    # Settings
+    st.markdown("### ⚙️ Analysis Settings")
+    
+    min_support = st.slider(
+        "Bundle Support %",
+        min_value=1,
+        max_value=20,
+        value=5,
+        help="ℹ️ Minimum percentage of transactions where products appear together to be considered a bundle"
+    ) / 100
+    
+    min_confidence = st.slider(
+        "Bundle Confidence %",
+        min_value=30,
+        max_value=100,
+        value=60,
+        help="ℹ️ Likelihood that customers who buy the first product will also buy the second product"
+    ) / 100
+    
+    n_clusters = st.slider(
+        "Customer Segments",
+        min_value=2,
+        max_value=5,
+        value=3,
+        help="Number of customer segments to create"
+    )
+    
+    st.markdown("---")
+    
+    # Analyze Button
+    if st.button("📊 Analyze Data", type="primary", use_container_width=True):
+        st.session_state.data_analyzed = True
+        st.rerun()
+    
+    st.markdown("---")
+    
+    # Quick Stats
+    st.markdown("### 📊 Quick Info")
+    if uploaded_file:
+        st.success("✅ Custom data loaded")
+    else:
+        st.info("📦 Using demo data")
+
+# --- LOAD OR GENERATE DATA ---
+@st.cache_data
+def load_data(uploaded_file):
+    """Load data from file or generate demo data"""
+    if uploaded_file is None:
+        df = generate_demo_data(n_transactions=600, n_customers=60, n_days=45)
+        return df, True
+    else:
+        df = pd.read_csv(uploaded_file)
+        
+        # Auto-detect and create missing columns
+        if 'TransactionID' not in df.columns:
+            df['TransactionID'] = df.groupby(['Date', 'UserID']).ngroup() + 1
+        
+        if 'Amount' not in df.columns:
+            df['Amount'] = np.random.randint(20, 500, size=len(df))
+        
+        df['Date'] = pd.to_datetime(df['Date'])
+        return df, False
+
+df, is_demo = load_data(uploaded_file)
+
+# Display data info banner or analyze prompt
+if not st.session_state.data_analyzed:
+    if is_demo:
+        st.info("📊 **Demo Data Loaded** - Click '📊 Analyze Data' in the sidebar to view insights!")
+    else:
+        st.success(f"✅ **Data Loaded Successfully** - {len(df):,} transactions from {df['UserID'].nunique()} customers. Click '📊 Analyze Data' to proceed!")
+    st.stop()
+
+# --- MAIN ANALYSIS (Only show when analyzed) ---
+# If we reach here, data_analyzed is True
+# Navigation
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Create tabs with icons
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Overview Dashboard",
+    "🎁 Smart Bundles",
+    "👥 Customer Segments",
+    "✉️ Marketing Assistant"
+])
+
+# ============================================
+# TAB 1: OVERVIEW DASHBOARD
+# ============================================
+with tab1:
+        st.markdown('<div class="animated">', unsafe_allow_html=True)
+        
+        # Key Metrics Row
+        st.markdown("### 📈 Key Performance Metrics")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        total_transactions = df['TransactionID'].nunique()
+        total_customers = df['UserID'].nunique()
+        total_products = df['ProductID'].nunique()
+        total_revenue = df['Amount'].sum()
+        
+        with col1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <p>Total Transactions</p>
+                <h3>{total_transactions:,}</h3>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="metric-card" style="background: linear-gradient(135deg, #88BDF2 0%, #6A89A7 100%);">
+                <p>Unique Customers</p>
+                <h3>{total_customers:,}</h3>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class="metric-card" style="background: linear-gradient(135deg, #6A89A7 0%, #384959 100%);">
+                <p>Product Catalog</p>
+                <h3>{total_products:,}</h3>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown(f"""
+            <div class="revenue-card">
+                <p>Total Revenue</p>
+                <h3>₹{total_revenue:,.0f}</h3>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        # Additional Insights
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 💰 Revenue Insights")
+            
+            avg_transaction_value = df.groupby('TransactionID')['Amount'].sum().mean()
+            avg_items_per_transaction = df.groupby('TransactionID').size().mean()
+            avg_customer_value = df.groupby('UserID')['Amount'].sum().mean()
+            
+            st.metric("Average Transaction Value", f"₹{avg_transaction_value:.2f}")
+            st.metric("Avg Items per Transaction", f"{int(round(avg_items_per_transaction))}")
+            st.metric("Avg Customer Lifetime Value", f"₹{avg_customer_value:.2f}")
+        
+        with col2:
+            st.markdown("### 📅 Time-based Insights")
+            
+            date_range = (df['Date'].max() - df['Date'].min()).days
+            daily_avg_transactions = total_transactions / max(date_range, 1)
+            daily_avg_revenue = total_revenue / max(date_range, 1)
+            
+            st.metric("Data Range (Days)", f"{date_range}")
+            st.metric("Avg Daily Transactions", f"{int(round(daily_avg_transactions))}")
+            st.metric("Avg Daily Revenue", f"₹{daily_avg_revenue:.2f}")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Charts
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 📈 Transaction Timeline")
+            import plotly.express as px
+        
+        fig2.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(family='Inter, sans-serif', color='#384959'),
+            xaxis=dict(showgrid=False, color='#384959', tickfont=dict(color='#384959')),
+            yaxis=dict(showgrid=True, gridcolor='rgba(0,0,0,0.05)', color='#384959', tickfont=dict(color='#384959')),
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+    
+    # Top Products
+    st.markdown("### 🏆 Top Performing Products")
+    
+    top_products = df.groupby('ProductID').agg({
+        'TransactionID': 'nunique',
+        'Amount': 'sum'
+    }).reset_index()
+    top_products.columns = ['Product', 'Times Sold', 'Total Revenue']
+    top_products = top_products.sort_values('Total Revenue', ascending=False).head(10)
+    
+    fig3 = px.bar(
+        top_products.head(10).sort_values('Total Revenue', ascending=True),
+        x='Total Revenue',
+        y='Product',
+        orientation='h',
+        title='Top 10 Products by Revenue (₹)',
+        color='Total Revenue',
+        color_continuous_scale=['#BDDDFC', '#88BDF2', '#6A89A7', '#384959']
+    )
+    fig3.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='Inter, sans-serif', color='#384959'),
+        xaxis=dict(showgrid=True, gridcolor='rgba(0,0,0,0.05)', color='#384959', tickfont=dict(color='#384959')),
+        yaxis=dict(showgrid=False, color='#384959', tickfont=dict(color='#384959')),
+        coloraxis_showscale=False
+    )
+    st.plotly_chart(fig3, use_container_width=True)
+    
+    # Raw Data
+    with st.expander("🔍 View Raw Transaction Data"):
+        st.dataframe(df.head(100), use_container_width=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ============================================
+# TAB 2: SMART BUNDLES
+# ============================================
+with tab2:
+    st.markdown('<div class="animated">', unsafe_allow_html=True)
+    st.markdown("### 🎁 Product Bundle Analysis")
+    st.markdown("Discover which products are frequently purchased together using **Apriori Algorithm**")
+    
+    with st.spinner("🔍 Analyzing product combinations..."):
+        basket_sets = prepare_basket_data(df)
+        frequent_itemsets, rules = find_product_bundles(basket_sets, min_support, min_confidence)
+    
+    if not rules.empty:
+        st.success(f"✅ Found **{len(rules)}** product bundle opportunities!")
+        
+        # Revenue Potential
+        st.markdown("### 💰 Revenue Opportunity Analysis")
+        revenue_potential = calculate_bundle_revenue_potential(df, rules)
+        
+        if not revenue_potential.empty:
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                total_potential = revenue_potential['potential_revenue'].sum()
+                st.metric(
+            label="Potential Additional Revenue",
+            value=f"₹{total_potential:,.2f}",
+            delta=f"From {len(rules)} bundles"
+        )
+            with col2:
+                avg_potential = revenue_potential['potential_revenue'].mean()
+                st.metric("Avg per Bundle", f"₹{avg_potential:,.0f}")
+            
+            with col3:
+                top_bundle_revenue = revenue_potential.iloc[0]['potential_revenue']
+                st.metric("Top Bundle Potential", f"₹{top_bundle_revenue:,.0f}")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Top Bundles Display
+        st.markdown("### 🏆 Recommended Product Bundles")
+        
+        for idx, row in rules.head(8).iterrows():
+            col1, col2 = st.columns([3, 1])
+            
+            # Get potential revenue from the revenue_potential dataframe if available
+            if idx < len(revenue_potential):
+                potential = revenue_potential.iloc[idx]['potential_revenue']
+            else:
+                potential = 0.0
+            
+            with col1:
+                st.markdown(f"""
+                <div class="bundle-card">
+                    <h4>{idx + 1}. {row['antecedents_str']} + {row['consequents_str']}</h4>
+                    <span class="bundle-label">₹{potential:,.2f} Revenue</span>
+                    <p style="margin: 10px 0 5px 0; color: #4a5568;">
+                        <strong>When customers buy:</strong> {row['antecedents_str']}<br>
+                        <strong>They also buy:</strong> {row['consequents_str']} <span class="badge badge-success">{row['confidence_pct']}% of the time</span>
+                    </p>
+                    <div style="margin-top: 15px;">
+                        <span class="badge badge-info">Support: {row['support_pct']}%</span>
+                        <span class="badge badge-info">Lift: {row['lift_score']}x</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                # Progress bar for confidence
+                st.markdown(f"""
+                <div style="margin-top: 25px;">
+                    <p style="font-size: 0.9em; color: #718096; margin-bottom: 5px;">Confidence</p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {row['confidence_pct']}%;">
+                            {row['confidence_pct']}%
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Detailed Table
+        with st.expander("📋 View All Bundle Details"):
+            display_df = rules[['antecedents_str', 'consequents_str', 'confidence_pct', 'lift_score', 'support_pct']].copy()
+            display_df.columns = ['Product(s) A', 'Product(s) B', 'Confidence %', 'Lift', 'Support %']
+            st.dataframe(display_df, use_container_width=True, height=400)
+        
+        # Visualization
+        st.markdown("### 📊 Bundle Confidence Visualization")
+        
+        top_bundles = rules.head(10).copy()
+        top_bundles['Bundle'] = top_bundles['antecedents_str'] + ' → ' + top_bundles['consequents_str']
+        
+        fig = px.bar(top_bundles, y='Bundle', x='confidence_pct',
+                    orientation='h',
+                    color='lift_score',
+                    color_continuous_scale='Viridis',
+                    labels={'confidence_pct': 'Confidence %', 'Bundle': '', 'lift_score': 'Lift Score'},
+                    title='Top 10 Product Bundles by Confidence')
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(family='Inter, sans-serif'),
+            height=500
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+    else:
+        st.warning(f"⚠️ No bundles found with the current thresholds. Try adjusting the settings in the sidebar.")
+        st.info("💡 **Tip:** Lower the Support % or Confidence % to discover more patterns.")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ============================================
+# TAB 3: CUSTOMER SEGMENTS
+# ============================================  
+with tab3:
+    st.markdown('<div class="animated">', unsafe_allow_html=True)
+    st.markdown("### 👥 Customer Segmentation Analysis")
+    st.markdown("Understand your customers through **K-Means clustering** and **RFM analysis**")
+    
+    with st.spinner("🎯 Analyzing customer behavior..."):
+        customer_metrics = calculate_customer_metrics(df)
+        customer_metrics, segment_profiles = segment_customers(customer_metrics, n_clusters)
+        segment_insights = get_segment_insights(customer_metrics, df)
+    
+    st.success(f"✅ Customers segmented into **{n_clusters}** distinct groups!")
+    
+    # Segment Overview
+    st.markdown("### 📊 Segment Overview")
+    
+    cols = st.columns(n_clusters)
+    
+    for idx, (segment_name, insights) in enumerate(segment_insights.items()):
+        with cols[idx]:
+            st.markdown(f"""
+            <div class="segment-card">
+                <div class="segment-title">{segment_name}</div>
+                <div class="stat-item">
+                    <div class="stat-label">Customers</div>
+                    <div class="stat-value">{insights['size']}</div>
+                </div>
+                <div class="stat-item" style="margin-top: 10px;">
+                    <div class="stat-label">Total Revenue</div>
+                    <div class="stat-value">₹{insights['total_revenue']:,.0f}</div>
+                </div>
+                <div class="stat-item" style="margin-top: 10px;">
+                    <div class="stat-label">Avg Spend</div>
+                    <div class="stat-value">₹{insights['avg_spend_per_customer']:,.0f}</div>
+                </div>
+                <div class="stat-item" style="margin-top: 10px;">
+                    <div class="stat-label">Contribution</div>
+                    <div class="stat-value">{insights['revenue_contribution']:.1f}%</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Visualizations
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 📈 Segment Distribution")
+        
+        segment_sizes = customer_metrics['SegmentName'].value_counts()
+        fig = px.pie(values=segment_sizes.values, names=segment_sizes.index,
+                    title='Customer Distribution by Segment',
+                    color_discrete_sequence=px.colors.sequential.Purples_r)
+        fig.update_traces(textposition='inside', textinfo='percent+label')
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(family='Inter, sans-serif')
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.markdown("### 💰 Revenue Contribution")
+        
+        revenue_by_segment = []
+        for segment_name, insights in segment_insights.items():
+            revenue_by_segment.append({
+                'Segment': segment_name,
+                'Revenue': insights['total_revenue']
+            })
+        revenue_df = pd.DataFrame(revenue_by_segment)
+        
+        fig2 = px.bar(revenue_df, x='Segment', y='Revenue',
+                     title='Total Revenue by Segment',
+                     color='Revenue',
+                     color_continuous_scale='Blues')
+        fig2.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(family='Inter, sans-serif'),
+            showlegend=False
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+    
+    # 3D Scatter
+    st.markdown("### 🎨 Customer Segments in 3D Space")
+    
+    fig3d = px.scatter_3d(customer_metrics,
+                         x='Recency', y='Frequency', z='TotalSpend',
+                         color='SegmentName',
+                         title='Customer Segmentation (3D Visualization)',
+                         labels={
+                             'TotalSpend': 'Total Spend (₹)',
+                             'Frequency': 'Purchase Frequency',
+                             'Recency': 'Recency (Days Ago)'
+                         },
+                         hover_data=['UserID'],
+                         color_discrete_sequence=px.colors.qualitative.Set3)
+    fig3d.update_layout(
+        scene=dict(
+            xaxis=dict(title='Recency', backgroundcolor="rgba(0,0,0,0)", gridcolor='#BDDDFC', showbackground=True, tickfont=dict(color='#384959'), title_font=dict(color='#384959')),
+            yaxis=dict(title='Frequency', backgroundcolor="rgba(0,0,0,0)", gridcolor='#BDDDFC', showbackground=True, tickfont=dict(color='#384959'), title_font=dict(color='#384959')),
+            zaxis=dict(title='Monetary', backgroundcolor="rgba(0,0,0,0)", gridcolor='#BDDDFC', showbackground=True, tickfont=dict(color='#384959'), title_font=dict(color='#384959')),
+            bgcolor='rgba(0,0,0,0)'
+        ),
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=0, r=0, t=0, b=0),
+        font=dict(color='#384959')
+    )
+    st.plotly_chart(fig3d, use_container_width=True)
+    
+    # Segment Details
+    st.markdown("### 📋 Detailed Segment Insights")
+    
+    for segment_name, insights in segment_insights.items():
+        with st.expander(f"🔍 {segment_name} - Detailed Analysis"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### Key Metrics")
+                st.metric("Number of Customers", f"{insights['size']}")
+                st.metric("Total Revenue Generated", f"₹{insights['total_revenue']:,.2f}")
+                st.metric("Average Spend per Customer", f"₹{insights['avg_spend_per_customer']:,.2f}")
+                st.metric("Purchase Frequency", f"{insights['avg_frequency']:.1f} transactions")
+            
+            with col2:
+                st.markdown("#### Top Products")
+                for product, count in list(insights['top_products'].items())[:5]:
+                    st.markdown(f"**{product}**: {count} purchases")
+                
+                st.markdown(f"**Avg Items per Transaction**: {insights['avg_items_per_transaction']:.1f}")
+                st.markdown(f"**Revenue Contribution**: {insights['revenue_contribution']:.1f}%")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ============================================
+# TAB 4: MARKETING ASSISTANT
+# ============================================
+with tab4:
+    st.markdown('<div class="animated">', unsafe_allow_html=True)
+    st.markdown("### ✉️ AI-Powered Marketing Campaign Generator")
+    st.markdown("Create personalized marketing campaigns based on customer segments and purchase behavior")
+    
+    # Campaign Configuration
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        selected_segment = st.selectbox(
+            "🎯 Target Segment",
+            customer_metrics['SegmentName'].unique(),
+            help="Choose which customer segment to target"
+        )
+    
+    with col2:
+        campaign_type = st.selectbox(
+            "📧 Campaign Type",
+            ["Product Recommendation", "Exclusive Discount", "VIP Upgrade", "Re-engagement", "New Product Launch"],
+            help="Select the type of marketing campaign"
+        )
+    
+    # Get segment data
+    segment_customers = customer_metrics[customer_metrics['SegmentName'] == selected_segment]
+    segment_user_ids = segment_customers['UserID'].tolist()
+    segment_data = df[df['UserID'].isin(segment_user_ids)]
+    segment_products = segment_data['ProductID'].value_counts().head(5)
+    
+    # Display segment info
+    st.markdown(f"""
+    <div class="insight-card">
+        <h4>📊 Target Segment Profile</h4>
+        <p><strong>Segment:</strong> {selected_segment}</p>
+        <p><strong>Total Customers:</strong> {len(segment_customers):,}</p>
+        <p><strong>Average Spend:</strong> ₹{segment_customers['TotalSpend'].mean():,.2f}</p>
+        <p><strong>Average Frequency:</strong> {segment_customers['Frequency'].mean():.1f} transactions</p>
+        <p><strong>Popular Products:</strong> {', '.join(segment_products.index.tolist()[:3])}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Generate Email Button
+    if st.button("🎨 Generate Marketing Email", type="primary", use_container_width=True):
+        with st.spinner("✨ Crafting your personalized email..."):
+            # Generate email content
+            avg_spend = segment_customers['TotalSpend'].mean()
+            top_product = segment_products.index[0] if len(segment_products) > 0 else "our products"
+            
+            # Customize email based on segment and campaign type
+            if "VIP" in selected_segment or "High" in selected_segment:
+                greeting = "Dear Valued Customer"
+                offer = "exclusive 20% VIP discount"
+                cta = "CLAIM YOUR VIP OFFER"
+            elif "Loyal" in selected_segment:
+                greeting = "Hello Loyal Friend"
+                offer = "special 15% loyalty reward"
+                cta = "REDEEM YOUR REWARD"
+            elif "Growing" in selected_segment or "New" in selected_segment:
+                greeting = "Hi there"
+                offer = "welcoming 10% discount"
+                cta = "START SHOPPING"
+            else:
+                greeting = "Hello"
+                offer = "special 10% discount"
+                cta = "SHOP NOW"
+            
+            email_draft = f"""
+### 📧 Generated Email Campaign
+
+---
+
+**Subject Line Options:**
+
+1. {greeting}! Your {offer} is waiting ✨
+2. Exclusive offer on {top_product} just for you
+3. We've reserved something special for you 🎁
+
+---
+
+**Email Body:**
+
+{greeting},
+
+We noticed you're one of our valued customers in our **{selected_segment}** tier!
+
+Based on your purchase history, especially your interest in **{top_product}**, we've handpicked some recommendations that we think you'll love.
+
+**🎁 Your Exclusive Offer:**
+
+Get **{offer}** on your next purchase! This includes:
+
+{chr(10).join([f'• **{prod}** - One of your favorites!' for prod in segment_products.index.tolist()[:3]])}
+
+**💎 Why This Offer is Perfect for You:**
+
+- You've spent an average of **₹{avg_spend:.2f}** with us
+- These products complement your recent purchases
+- Limited time offer - valid for the next **48 hours**
+
+**[{cta}]**
+
+Don't miss out on this exclusive opportunity!
+
+---
+
+**Best regards,**  
+The Smart Retail Team
+
+*P.S. This offer is exclusively for our {selected_segment} members. You're in good company with {len(segment_customers)} other valued customers!*
+
+---
+
+**📊 Campaign Performance Predictions:**
+
+- **Expected Open Rate:** {np.random.randint(25, 45)}%
+- **Expected Click Rate:** {np.random.randint(8, 18)}%
+- **Estimated Conversions:** {int(len(segment_customers) * np.random.uniform(0.05, 0.15))} customers
+- **Potential Revenue:** ₹{len(segment_customers) * avg_spend * np.random.uniform(0.05, 0.15):,.2f}
+            """
+            
+            st.markdown(email_draft)
+            
+            # Action buttons
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.download_button(
+                    label="📥 Download Email",
+                    data=email_draft,
+                    file_name=f"campaign_{selected_segment.replace(' ', '_')}.txt",
+                    mime="text/plain"
+                )
+            
+            with col2:
+                if st.button("🔄 Generate Another"):
+                    st.rerun()
+            
+            with col3:
+                st.button("📤 Export Segment List")
+    
+    # Show segment customers
+    with st.expander(f"👥 View All Customers in {selected_segment}"):
+        display_cols = ['UserID', 'TotalSpend', 'Frequency', 'UniqueProducts', 'Recency', 'CLV']
+        segment_display = segment_customers[display_cols].sort_values('TotalSpend', ascending=False)
+        st.dataframe(segment_display, use_container_width=True, height=400)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
