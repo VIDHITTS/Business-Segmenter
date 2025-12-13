@@ -47,31 +47,56 @@ st.markdown("""
 # --- LOAD OR GENERATE DATA (before sidebar to enable smart mode) ---
 @st.cache_data
 def load_data(uploaded_file):
-    """Load data from file or generate demo data"""
+    """Load data from file or generate demo data with validation"""
     if uploaded_file is None:
         df = generate_demo_data(n_transactions=600, n_customers=60, n_days=45)
-        return df, True
+        return df, True, None
     else:
-        uploaded_file.seek(0)
-        df = pd.read_csv(uploaded_file)
-        
-        # Auto-detect and create missing columns
-        if 'TransactionID' not in df.columns:
-            df['TransactionID'] = df.groupby(['Date', 'UserID']).ngroup() + 1
-        
-        if 'Amount' not in df.columns:
-            df['Amount'] = np.random.randint(20, 500, size=len(df))
-        
-        df['Date'] = pd.to_datetime(df['Date'])
-        return df, False
+        try:
+            uploaded_file.seek(0)
+            df = pd.read_csv(uploaded_file)
+            
+            # Validate required columns
+            required_columns = ['Date', 'UserID', 'ProductID']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                error_msg = f"Missing required columns: {', '.join(missing_columns)}"
+                return None, False, error_msg
+            
+            # Validate data is not empty
+            if len(df) == 0:
+                return None, False, "CSV file is empty. Please upload a file with transaction data."
+            
+            # Auto-detect and create missing optional columns
+            if 'TransactionID' not in df.columns:
+                df['TransactionID'] = df.groupby(['Date', 'UserID']).ngroup() + 1
+            
+            if 'Amount' not in df.columns:
+                df['Amount'] = np.random.randint(20, 500, size=len(df))
+            
+            # Convert date column
+            try:
+                df['Date'] = pd.to_datetime(df['Date'])
+            except Exception as e:
+                return None, False, f"Invalid date format in 'Date' column. Please use YYYY-MM-DD format. Error: {str(e)}"
+            
+            return df, False, None
+            
+        except pd.errors.EmptyDataError:
+            return None, False, "CSV file is empty or corrupted."
+        except pd.errors.ParserError as e:
+            return None, False, f"Error parsing CSV file. Please check the file format. Error: {str(e)}"
+        except Exception as e:
+            return None, False, f"Error loading file: {str(e)}"
 
 # Pre-load data to check if we have an uploaded file
 if st.session_state.uploaded_file_name: # Check if a file name was previously stored
     # There's an uploaded file, load it from session state
-    temp_df, temp_is_demo = load_data(st.session_state.get('temp_uploaded_file'))
+    temp_df, temp_is_demo, temp_error = load_data(st.session_state.get('temp_uploaded_file'))
 else:
     # Load demo data for smart mode calculation
-    temp_df, temp_is_demo = load_data(None)
+    temp_df, temp_is_demo, temp_error = load_data(None)
 
 # --- SIDEBAR (now with data for smart mode) ---
 uploaded_file, min_support, min_confidence, n_clusters = render_sidebar(temp_df)
@@ -86,7 +111,33 @@ else:
     st.session_state.uploaded_file_name = None
 
 # Now load the actual data with the uploaded file
-df, is_demo = load_data(uploaded_file)
+df, is_demo, error_msg = load_data(uploaded_file)
+
+# Handle errors from CSV upload
+if error_msg:
+    st.error(f"**Error Loading CSV File**")
+    st.error(error_msg)
+    st.info("""
+    **Required CSV Format:**
+    
+    Your CSV file must contain these columns:
+    - **Date** - Transaction date (YYYY-MM-DD format)
+    - **UserID** - Customer identifier
+    - **ProductID** - Product name or ID
+    
+    Optional columns (will be auto-generated if missing):
+    - **TransactionID** - Unique transaction identifier
+    - **Amount** - Transaction amount
+    
+    **Example:**
+    ```
+    Date,UserID,ProductID,Amount
+    2024-01-15,CUST001,PROD123,299.99
+    2024-01-15,CUST001,PROD456,149.99
+    2024-01-16,CUST002,PROD123,299.99
+    ```
+    """)
+    st.stop()
 
 # Display data info banner or analyze prompt
 # Auto-analyze demo data, but require button click for uploaded data
