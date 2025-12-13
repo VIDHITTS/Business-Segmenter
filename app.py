@@ -44,10 +44,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR ---
-uploaded_file, min_support, min_confidence, n_clusters = render_sidebar()
-
-# --- LOAD OR GENERATE DATA ---
+# --- LOAD OR GENERATE DATA (before sidebar to enable smart mode) ---
 @st.cache_data
 def load_data(uploaded_file):
     """Load data from file or generate demo data"""
@@ -55,6 +52,7 @@ def load_data(uploaded_file):
         df = generate_demo_data(n_transactions=600, n_customers=60, n_days=45)
         return df, True
     else:
+        uploaded_file.seek(0)
         df = pd.read_csv(uploaded_file)
         
         # Auto-detect and create missing columns
@@ -67,6 +65,27 @@ def load_data(uploaded_file):
         df['Date'] = pd.to_datetime(df['Date'])
         return df, False
 
+# Pre-load data to check if we have an uploaded file
+if st.session_state.uploaded_file_name: # Check if a file name was previously stored
+    # There's an uploaded file, load it from session state
+    temp_df, temp_is_demo = load_data(st.session_state.get('temp_uploaded_file'))
+else:
+    # Load demo data for smart mode calculation
+    temp_df, temp_is_demo = load_data(None)
+
+# --- SIDEBAR (now with data for smart mode) ---
+uploaded_file, min_support, min_confidence, n_clusters = render_sidebar(temp_df)
+
+# Store uploaded file in session state for reload
+if uploaded_file:
+    st.session_state.temp_uploaded_file = uploaded_file
+    st.session_state.uploaded_file_name = uploaded_file.name # Store name for persistence check
+else:
+    # If file is cleared, clear session state
+    st.session_state.temp_uploaded_file = None
+    st.session_state.uploaded_file_name = None
+
+# Now load the actual data with the uploaded file
 df, is_demo = load_data(uploaded_file)
 
 # Display data info banner or analyze prompt
