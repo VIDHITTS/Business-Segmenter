@@ -1,6 +1,6 @@
 # Business Segmenter
 
-A comprehensive business analytics tool for customer segmentation, market basket analysis, and AI-powered marketing campaigns.
+A comprehensive business analytics tool for customer segmentation, market basket analysis, and AI-powered marketing campaigns, built with Streamlit.
 
 ## Features
 
